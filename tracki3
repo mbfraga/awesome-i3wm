@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+# Name: tracki3
+# Author: Martin Fraga (github.com/mbfraga)
+# Version: 0.1
+#
+# tracki3 - Display your current i3 layout in a tree view.
+#           Run with watch, `watch -n 1 tracki3` to track your layout changes
+#           in real time.
+#
+# Dependencies
+#   * i3ipc
+
+import i3ipc
+
+def find_nodes(init_node, depth=1):
+    """Get all children nodes inside of a parent node, and display its layout 
+       or application name.
+
+       Keyword Arguments:
+       depth - Integer number used to decide the spacing for the node
+               displayed.
+    """
+    for node in init_node.nodes:
+        try:
+            if depth ==1:
+                print("   |-"*depth + node.name )
+                #print("id: " + node.window)
+            else:
+                print("   "*depth + "|-" + node.name)
+                #print("id: " + node.window)
+        except:
+            if depth ==1:
+                print("   |-"*depth + node.layout)
+            else:
+                print("   "*depth + "|-" + node.layout)
+            find_nodes(node, depth+1)
+    for node in init_node.floating_nodes:
+        try:
+            if depth ==1:
+                print("   |-"*depth + node.name + " [floating]")
+                #print("id: " + node.window)
+            else:
+                print("   "*depth + "|-" + node.name + " [floating]")
+                #print("id: " + node.window)
+        except:
+            if depth ==1:
+                print("   |-"*depth + node.layout + " [floating]")
+            else:
+                print("   "*depth + "|-" + node.layout + " [floating]")
+            find_nodes(node, depth+1)
+
+
+if __name__ == "__main__":
+    i3 = i3ipc.Connection()
+
+    tree = i3.get_tree()
+    itertree = iter(tree.nodes)
+
+    for monitor in itertree:
+        print("Monitor:", monitor.name, monitor.rect.x, monitor.rect.y,
+              monitor.rect.width, monitor.rect.height)
+        if monitor.name == '__i3':
+            for workspace in monitor.nodes[0].nodes:
+                print(" |-workspace:", workspace.name, "layout:",
+                      workspace.layout)
+                find_nodes(workspace)
+        else:
+            for workspace in monitor.nodes[1].nodes:
+                print(" |-workspace:", workspace.name, "layout:",
+                      workspace.layout)
+                find_nodes(workspace)
+        print()

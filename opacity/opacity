@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# REQUIRES: wmctrl
+# Set opacity levels on all windows from OPFILE
+
+OPFILE=~/.xopacity
+
+SET=$(xprop -root | grep '^_NET_SUPPORTED(ATOM)' \
+    | grep _NET_WM_WINDOW_OPACITY)
+
+[ -z "$SET" ] && \
+    xprop -root -f _NET_SUPPORTED 32a -set _NET_SUPPORTED \
+        "$(xprop -root | grep '^_NET_SUPPORTED(ATOM)' \
+        | sed 's/^.*= //' | tr -d ' '),_NET_WM_WINDOW_OPACITY"
+
+[ ! -r $OPFILE ] && exit
+classes=($(cat $OPFILE))
+eval ${classes[@]}
+
+for WINID in $(wmctrl -l | awk '{print $1}')
+do
+    class=$(xprop -id $WINID | grep WM_CLASS | cut -d'"' -f4)
+    [ -n "$(grep -ie "^$class=" $OPFILE)" ] && \
+        xprop -id $WINID -f _NET_WM_WINDOW_OPACITY 32c \
+            -set _NET_WM_WINDOW_OPACITY ${!class}
+done

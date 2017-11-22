@@ -1,7 +1,8 @@
 #!/bin/sh
 
+# By slackhead/dive
 # REQUIRES: xdotool
-# Decrease _NET_WM_WINDOW_OPACITY
+# Increase _NET_WM_WINDOW_OPACITY
 # Max = 4294967294
 
 set -e

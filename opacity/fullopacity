@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# By slackhead/dive
 # REQUIRES: xdotool
 # Set full opacity
 

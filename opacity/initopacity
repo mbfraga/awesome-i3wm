@@ -1,8 +1,0 @@
-#!/bin/sh
-
-FWIN=$(xdotool getwindowname $(xdotool getwindowfocus))
-WINID=$(xwininfo -root -tree | grep "$FWIN" | head -n 1 | awk '{print $1}')
-
-xprop -id $WINID -f _NET_WM_WINDOW_OPACITY 32c -set _NET_WM_WINDOW_OPACITY 4294967294
-
-# vim: tw=0

@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# By slackhead/dive
 # REQUIRES: wmctrl
 # Set opacity levels on all windows from OPFILE
 

@@ -1,72 +1,272 @@
 #!/usr/bin/env python3
 # Name: tracki3
 # Author: Martin Fraga (github.com/mbfraga)
-# Version: 0.1
+# Version: 0.2
 #
 # tracki3 - Display your current i3 layout in a tree view.
-#           Run with watch, `watch -n 1 tracki3` to track your layout changes
-#           in real time.
+#           To track the layout changes, use '-t', and set the update delay
+#           with '-d DELAY'.
 #
 # Dependencies
-#   * i3ipc
+#   * i3ipc-python
 
+import sys
+import argparse
+import select
 import i3ipc
 
-def find_nodes(init_node, depth=1):
-    """Get all children nodes inside of a parent node, and display its layout 
-       or application name.
 
-       Keyword Arguments:
-       depth - Integer number used to decide the spacing for the node
-               displayed.
+TREE_COLORS = True
+UTF8_OUTPUT = True
+SHOW_DETAILS = False
+MAX_NAMELEN = 20
+SHOW_WINDOWNAMES = True
+ONLY_WORKSPACES = False
+TRACK = False
+DELAY = 2
+
+class bcolors:
+    HEADER = '\033[33m'
+    DARKGRAY = '\033[37m'
+    ENDC = '\033[0m'
+
+    def disable(self):
+        self.HEADER = ''
+        self.DARKGRAY = ''
+        self.ENDC = ''
+
+class skel:
+    OUTPUT = "┯ "
+    WS_NODE = "├── "
+    WS_NODE_WC = "├── "
+    WS_LNODE = "└── "
+    WS_LNODE_WC = "└── "
+    NODE = "├── "
+    NODE_WC = "├── "
+    LNODE = "└── "
+    LNODE_WC = "└── "
+    VLINE = "│"
+    SPACE = "   "
+
+
+    def ascii(self):
+        self.OUTPUT = ""
+        self.WS_NODE = "|- "
+        self.WS_NODE_WC = "|- "
+        self.WS_LNODE = "|- "
+        self.WS_LNODE_WC = "|- "
+        self.NODE = "|- "
+        self.NODE_WC = "|- "
+        self.LNODE = "|- "
+        self.LNODE_WC = "|- "
+        self.VLINE = ""
+        self.SPACE = "   "
+
+
+def print_node_spacing(lnode_list):
     """
-    for node in init_node.nodes:
-        try:
-            if depth ==1:
-                print("   |-"*depth + node.name )
-                #print("id: " + node.window)
+    Print spacing before a node based on its corresponding lnode_list. This is
+    a list of booleans that indicate whether the current node is in the last
+    node of a branch which has a particular depth. The depth corresponds to the
+    index in the list.
+    """
+    sys.stdout.write(bcolors.HEADER)
+    for d in lnode_list:
+        if d:
+            sys.stdout.write(" "*len(skel.VLINE))
+        else:
+            sys.stdout.write(skel.VLINE)
+        sys.stdout.write(skel.SPACE)
+    sys.stdout.write(bcolors.ENDC)
+
+
+def print_cnodes(pnode, depth, lnode_list):
+    """
+    Get all children nodes inside of a parent node, and print its layout or
+    application class. If the application class is shown, then the window name
+    will also be shown (if SHOW_WINDOWNAMES is True). Nodes will be followed
+    recursively.
+
+    Keyword Arguments:
+    pnode - Parent node.
+    depth - Integer number used to decide the spacing for the node displayed.
+    lnode_list - List of boolean identifying if the current node is at the last
+    node for a particular depth. The depth corresponds to the index in this
+    list.
+    """
+    cnode_num = len(pnode.nodes) + len(pnode.floating_nodes)
+    cnode_ct = 1
+    for n in range(2):
+        if n == 0:
+            cnodes = pnode.nodes
+            floating = False
+        elif n == 1:
+            cnodes = pnode.floating_nodes
+            floating = True
+
+        for node in cnodes:
+            if floating:
+                extra = " [floating]"
             else:
-                print("   "*depth + "|-" + node.name)
-                #print("id: " + node.window)
-        except:
-            if depth ==1:
-                print("   |-"*depth + node.layout)
+                extra = ""
+            print_node_spacing(lnode_list[:-1])
+            if cnode_ct == cnode_num:
+                nodeglyphs = skel.LNODE
+                lnode_list[depth] = True
             else:
-                print("   "*depth + "|-" + node.layout)
-            find_nodes(node, depth+1)
-    for node in init_node.floating_nodes:
-        try:
-            if depth ==1:
-                print("   |-"*depth + node.name + " [floating]")
-                #print("id: " + node.window)
+                nodeglyphs = skel.NODE
+
+            sys.stdout.write(bcolors.HEADER)
+            if node.window_class:
+                if SHOW_WINDOWNAMES:
+                    formatted_name =  " (" + node.name
+                    if len(formatted_name) > MAX_NAMELEN:
+                        formatted_name = formatted_name[:19] + "…"
+                    else:
+                        formatted_name = formatted_name
+                    formatted_name += ")"
+                else:
+                    formatted_name = ""
+                sys.stdout.write(nodeglyphs + bcolors.ENDC +
+                                 node.window_class  +
+                                 bcolors.DARKGRAY + formatted_name +
+                                 bcolors.ENDC)
             else:
-                print("   "*depth + "|-" + node.name + " [floating]")
-                #print("id: " + node.window)
-        except:
-            if depth ==1:
-                print("   |-"*depth + node.layout + " [floating]")
-            else:
-                print("   "*depth + "|-" + node.layout + " [floating]")
-            find_nodes(node, depth+1)
+                sys.stdout.write(nodeglyphs + bcolors.ENDC + node.layout +
+                                 extra)
+            sys.stdout.write('\n')
+            if len(node.nodes) > 0:
+                print_cnodes(node, depth+1, lnode_list + [False])
+            cnode_ct += 1
+
+def print_workspaces(output_nodes):
+    """
+    Print workspaces and all their children nodes, going down recursively.
+    """
+    wc = 1
+    for workspace in output_nodes:
+        lnode_list = [False]
+        if wc == len(output_nodes):
+            nodeglyphs = skel.WS_LNODE
+            lnode_list[0] = True
+        else:
+            nodeglyphs = skel.WS_NODE
+
+        sys.stdout.write(bcolors.HEADER + nodeglyphs + "workspace:"
+                         + bcolors.ENDC + " ")
+        sys.stdout.write(workspace.name +  " [layout:" +
+                         workspace.layout + ']\n')
+        lnode_list.append(False)
+        if not ONLY_WORKSPACES:
+            print_cnodes(workspace, 1, lnode_list)
+        wc += 1
+
+
+def print_tree(i3_tree):
+    """Print a nicely formatted tree based of i3ipc.Connection().get_tree()"""
+    itertree = iter(i3_tree.nodes)
+    for output in itertree:
+        sys.stdout.write(bcolors.HEADER + skel.OUTPUT + "Output:" +
+                         bcolors.ENDC + " " + output.name)
+        if SHOW_DETAILS:
+            sys.stdout.write(" [geometry: x=" + str(output.rect.x) + " y=" +
+                             str(output.rect.y) + " width=" +
+                             str(output.rect.width) + " height=" +
+                             str(output.rect.height) + "]")
+        sys.stdout.write('\n')
+        if output.name == '__i3':
+            print_workspaces(output.nodes[0].nodes)
+        else:
+            print_workspaces(output.nodes[1].nodes)
+        print()
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Print nicely formatted' +
+                                    " tree of current i3 layout. Use '-t' " +
+                                    "option to track layout.",
+                                    prefix_chars='-+')
+    parser.add_argument('+c', '--colors', action='store_true',
+                        help="color tree")
+    parser.add_argument('-c', '--no-colors', action='store_true', 
+                        help="don't color tree")
+    parser.add_argument('-n', '--nice-tree', action='store_true',
+                        help="use fancy utf-8 characters for tree")
+    parser.add_argument('-u', '--ugly-tree', action='store_true',
+                        help="don't use fancy utf-8 characters for tree")
+    parser.add_argument('-D', '--details', action='store_true',
+                        help="include more details displayed")
+    parser.add_argument('-s', '--no-details', action='store_true',
+                        help="don't show all details")
+    parser.add_argument('-l','--max-name-length', type=int, nargs='?',
+                        help="define max number of characters for the" + 
+                             "window names that will be displayed")
+    parser.add_argument('+w','--show-windownames', action='store_true',
+                        help="show window names in tree")
+    parser.add_argument('-w','--hide-windownames', action='store_true',
+                        help="don't show window names in tree")
+    parser.add_argument('-t', '--track', action='store_true',
+                        help="periodically update tree")
+    parser.add_argument('-o', '--once', action='store_true',
+                        help="show tree once")
+    parser.add_argument('-d', '--delay', type=int, nargs='?',
+                        help="time to sleep before updating tree, only " +
+                             "has an effect with --track")
+    parser.add_argument('--only-workspaces', action='store_true',
+                        help="only display tree up to workspaces")
+
+
+    args = parser.parse_args()
+
+    if args.colors:
+        TREE_COLORS = True
+    if args.no_colors:
+        TREE_COLORS = False
+    if args.nice_tree:
+        UTF8_OUTPUT = True
+    if args.ugly_tree:
+        UTF8_OUTPUT = False
+    if args.details:
+        SHOW_DETAILS = True
+    if args.no_details:
+        SHOW_DETAILS = False
+    if args.max_name_length:
+        MAX_NAMELEN = args.max_name_length
+    if args.show_windownames:
+        SHOW_WINDOWNAMES = True
+    if args.hide_windownames:
+        SHOW_WINDOWNAMES = False
+    if args.track:
+        TRACK = True
+    if args.once:
+        TRACK = False
+    if args.delay:
+        DELAY = args.delay
+    if args.only_workspaces:
+        ONLY_WORKSPACES=True
+
+    if not TREE_COLORS:
+        bcolors.disable(bcolors)
+    if not UTF8_OUTPUT:
+        skel.ascii(skel)
+
     i3 = i3ipc.Connection()
+    if TRACK:
+        while True:
+            sys.stdout.write("\033c")
+            tree = i3.get_tree()
+            print(bcolors.HEADER + "tracki3" + bcolors.DARKGRAY + " - delay=" +
+                  str(DELAY) + 's. Press Ctrl-D or Enter to quit.' +
+                  bcolors.ENDC)
+            print()
+            print_tree(tree)
+            i,o,e = select.select([sys.stdin], [], [], DELAY)
+            for s in i:
+                if s == sys.stdin:
+                    input = sys.stdin.readline()
+                    exit()
+    else:
+        tree = i3.get_tree()
+        print_tree(tree)
 
-    tree = i3.get_tree()
-    itertree = iter(tree.nodes)
 
-    for monitor in itertree:
-        print("Monitor:", monitor.name, monitor.rect.x, monitor.rect.y,
-              monitor.rect.width, monitor.rect.height)
-        if monitor.name == '__i3':
-            for workspace in monitor.nodes[0].nodes:
-                print(" |-workspace:", workspace.name, "layout:",
-                      workspace.layout)
-                find_nodes(workspace)
-        else:
-            for workspace in monitor.nodes[1].nodes:
-                print(" |-workspace:", workspace.name, "layout:",
-                      workspace.layout)
-                find_nodes(workspace)
-        print()

@@ -9,7 +9,6 @@
 #
 # Dependencies
 #   * i3ipc-python
-#   * curses (only for 'track' functionalities)
 
 import sys
 import argparse
@@ -17,11 +16,6 @@ import select
 from time import sleep
 import i3ipc
 
-try:
-    import curses
-    __CURSES=True
-except:
-    __CURSES=False
 
 TREE_COLORS = True
 UTF8_OUTPUT = True
